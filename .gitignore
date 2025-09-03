@@ -1,0 +1,12 @@
+# Virtual environment
+venv/
+
+# SQLite database
+*.sqlite3
+
+# Local settings & secrets
+.env
+
+# Media (if you don’t want uploaded files on GitHub)
+media/
+
