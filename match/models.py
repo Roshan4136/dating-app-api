@@ -25,7 +25,27 @@ class Match(models.Model):
 
     class Meta:
         unique_together = ('user1', 'user2')
+        # for queries per user + sorting.
+        indexes = [
+        models.Index(fields=["user1"]),
+        models.Index(fields=["user2"]),
+        models.Index(fields=["created_at"]),
+    ]
 
     def __str__(self):
         return f"Matches: {self.user1} with {self.user2} and Match_id:{self.id}"
+    
+class Block(models.Model):
+    blocker = models.ForeignKey(settings.AUTH_USER_MODEL, related_name='blocking', on_delete=models.CASCADE)
+    blocked = models.ForeignKey(settings.AUTH_USER_MODEL, related_name="blocked_by", on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("blocker", "blocked")
+        indexes = [models.Index(fields=["blocker"])]  # to quickly find who a user has blocked.
+
+    def __str__(self):
+        return f"{self.blocker.email} blocked {self.blocked.email}"
+    
+    
 

@@ -3,6 +3,7 @@ from .views import (
     VerifyPhoneAPIView, VerifyOTPAPIView, RegisterUserAPIView,
     LoginUserAPIView, VerifyUserAPIView, DetailUserAPIView,
     UpdateUserAPIView, SetupProfileAPIView,TimelineAPIView,
+    OppUserDetailAPIView, 
 )
 
 urlpatterns = [
@@ -21,5 +22,7 @@ urlpatterns = [
     path('profile-create/', SetupProfileAPIView.as_view(), name='setup-profile'),
 
     path('timeline/', TimelineAPIView.as_view(), name='timeline'),
+    
+    path('detail/<int:pk>/', OppUserDetailAPIView.as_view(), name='opp-user-detail'),
     
 ]

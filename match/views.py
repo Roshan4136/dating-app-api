@@ -1,11 +1,14 @@
-from django.shortcuts import render
+from django.shortcuts import render, get_object_or_404
 from rest_framework.views import APIView
-from .models import Swipe, Match
+from .models import Swipe, Match, Block
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
-from .serializers import MatchSerializer
+from .serializers import MatchSerializer, BlockListSerializer
 from user.serializers import TimelineSerializer
+from user.models import MyUser
+from rest_framework.generics import ListAPIView
+
 
 
 class SwipeAPIView(APIView):
@@ -64,4 +67,65 @@ class MatchAPIView(APIView):
             },
             status=status.HTTP_200_OK
         )
+
+class BlockAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        blocker = request.user
+        blocked_id = request.data.get('blocked_id')   # arko user ko id
+        try:
+            blocked = MyUser.objects.get(id=blocked_id)
+        except MyUser.DoesNotExist:
+            return Response(
+                {"error": "User not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        Block.objects.create(
+            blocker=blocker,
+            blocked=blocked
+        )
+
+        return Response(
+            {"message": "Successfully blocked the user."},
+            status=status.HTTP_201_CREATED
+        )
+    
+class UnblockAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, block_id):
+        blocker = request.user
+        block_obj = get_object_or_404(Block, id=block_id, blocker=blocker)
+
+        block_obj.delete()
+
+        return Response(
+            {"message": "Successfully unblocked the user."},
+            status=status.HTTP_200_OK
+        )
+
+class BlockListAPIView(ListAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = BlockListSerializer
+
+    def get_queryset(self):
+        return Block.objects.filter(blocker=self.request.user)
+    
+# class BlockListAPIView(APIView):
+#     permission_classes = [IsAuthenticated]
+
+#     def get(self, request):
+#         blocker = request.user
+#         block_list = Block.objects.filter(blocker=blocker)
+#         serializer = BlockListSerializer(block_list, many=True)
+#         return Response(
+#             {
+#                 "message": "successfully fetched the list.",
+#                 "data": serializer.data
+#             },
+#             status=status.HTTP_200_OK
+#         )
+        
 

@@ -9,6 +9,20 @@ from datetime import date
 # from django.contrib.gis.db import models as gis_models
 
 # Create your models here.
+class ZodiacSign(models.TextChoices):
+    ARIES = 'aries', 'aries'
+    TAURUS = 'taurus', 'taurus'
+    GEMINI = 'gemini', 'gemini'
+    CANCER = 'cancer', 'cancer'
+    LEO = 'leo', 'leo'
+    VIRGO = 'virgo', 'virgo'
+    LIBRA = 'libra', 'libra'
+    SCORPIO = 'scorpio', 'scorpio'
+    SAGITTARIUS = 'sagittarius', 'sagittarius'
+    CAPRICORN = 'capricorn', 'capricorn'
+    AQUARIUS = 'aquarius', 'aquarius'
+    PISCES = 'pisces', 'pisces'
+
 class Gender(models.TextChoices):
     MALE = 'male', 'male'
     FEMALE = 'female', 'female'
@@ -42,7 +56,7 @@ class MyUser(AbstractBaseUser, PermissionsMixin):
     objects = MyUserManager()
 
     USERNAME_FIELD = 'email'
-    REQUIRED_FIELDS = []
+    REQUIRED_FIELDS = ['phone_no']
 
     def save(self, *args, **kwargs):
         if self.email:
@@ -51,10 +65,22 @@ class MyUser(AbstractBaseUser, PermissionsMixin):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return self.email or f"{self.phone_no}" or "Unnamed User"
+        if self.email:
+            return f"{self.email} (id: {self.id})"
+        elif self.phone_no:
+            return f"{self.phone_no} (id: {self.id})"
+        return f"Unnamed User (id: {self.id})"
+
     
+# hobbies
 class Interest(models.Model):
     name = models.CharField(max_length=50, unique=True)
+
+    def __str__(self):
+        return self.name
+    
+class LifestyleChoice(models.Model):
+    name = models.CharField(max_length=40, unique=True)
 
     def __str__(self):
         return self.name
@@ -72,11 +98,19 @@ class Profile(models.Model):
     # location = gis_models.PointField(geography=True, blank=True, null=True)
     intention = models.CharField(max_length=20, choices=Relationship.choices, blank=True, null=True)
     sexual_orientation = models.CharField(max_length=20, choices=SexualOrientation.choices, blank=True, null=True)
-    interests = models.ManyToManyField(Interest, blank=True, related_name='profiles', null=True)
-    
+    show_orientation = models.BooleanField(default=False)
+    interests = models.ManyToManyField(Interest, blank=True, related_name='profiles')
+    lifestyle_choices = models.ManyToManyField(LifestyleChoice, related_name='profiles_with_lifestyle')
+    zodiac_sign = models.CharField(max_length=20, choices=ZodiacSign.choices, null=True, blank=True)
+    show_zodiac = models.BooleanField(default=False)
     latitude = models.FloatField(blank=True, null=True)
     longitude = models.FloatField(blank=True, null=True)
     
+    class Meta:
+        indexes = [
+            models.Index(fields=["latitude", "longitude"]),  # for geo/location queries
+        ]
+
     @property
     def age(self):
         if not self.dob:
@@ -88,7 +122,7 @@ class Profile(models.Model):
         return age
         
     def __str__(self):
-        return f"{self.first_name} {self.last_name}"
+        return f"{self.first_name} {self.last_name}, profile_id : {self.id} and user_id: {self.user.id}"
 
 class Image(models.Model):
     profile = models.ForeignKey(Profile, related_name='images', on_delete=models.CASCADE)
@@ -97,7 +131,17 @@ class Image(models.Model):
 
     def __str__(self):
         return f"photo of {self.profile.user.email}"
-    
+
+class SocialLink(models.Model):
+    profile = models.ForeignKey(Profile, related_name='social_links', on_delete=models.CASCADE)
+    link_url = models.URLField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('profile', 'link_url')
+        
+    def __str__(self):
+        return f"social link of {self.profile.user.email}"
 
     
 

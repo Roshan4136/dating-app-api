@@ -15,6 +15,9 @@ import os
 import environ
 from datetime import timedelta
 
+import cloudinary
+
+
 # Initialise environment variables
 env = environ.Env(
     DEBUG=(bool, False)
@@ -60,10 +63,12 @@ INSTALLED_APPS = [
     'django_filters',
     'match.apps.MatchConfig',
     'chat',
+
+    # for swagger
+    'drf_spectacular',
 ]
 
-# channels
-ASGI_APPLICATION = 'dating_kit.asgi.application'
+
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -94,8 +99,9 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'dating_kit.wsgi.application'
-
+# WSGI_APPLICATION = 'dating_kit.wsgi.application'
+# channels
+ASGI_APPLICATION = 'dating_kit.asgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
@@ -168,6 +174,7 @@ CACHES = {
     }
 }
 
+
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
@@ -189,7 +196,8 @@ REST_FRAMEWORK = {
         'django_filters.rest_framework.DjangoFilterBackend',
         'rest_framework.filters.OrderingFilter',
         'rest_framework.filters.SearchFilter',
-    ]
+    ],
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
 
@@ -213,6 +221,28 @@ EMAIL_HOST_USER = env('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD')
 
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+
+#coudinary url
+# CLOUDINARY_URL=cloudinary://<api_key>:<api_secret>@<cloud_name>
+
+# one of these two is required either url or other credentials.
+
+# cloudinary configuration
+cloudinary.config(
+    cloud_name=env("CLOUDINARY_NAME"),
+    api_key=env("CLOUDINARY_KEY"),
+    api_secret=env("CLOUDINARY_SECRET")
+)
+# print("CLOUDINARY CONFIG:", cloudinary.config())
+# print("ENV CLOUDINARY_NAME:", env("CLOUDINARY_NAME", default=None))
+# print("ENV CLOUDINARY_KEY:", env("CLOUDINARY_KEY", default=None))
+# print("ENV CLOUDINARY_SECRET:", env("CLOUDINARY_SECRET", default=None))
+# print("CLOUDINARY CONFIG:", cloudinary.config().cloud_name, cloudinary.config().api_key)
+
+# settings.py
+DATA_UPLOAD_MAX_MEMORY_SIZE = 52428800  # 50 MB
+FILE_UPLOAD_MAX_MEMORY_SIZE = 52428800  # 50 MB
+
 
 # TWILIO_ACCOUNT_SID = env('TWILIO_ACCOUNT_SID')
 # TWILIO_AUTH_TOKEN = env('TWILIO_AUTH_TOKEN')

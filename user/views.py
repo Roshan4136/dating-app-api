@@ -10,7 +10,7 @@ from .serializers import (
     PhoneSerializer, VerifyOtpSerializer,
     ProfileSerializer, MyUserSerializer,
     LoginUserSerializer, VerifyUserSerializer,
-    TimelineSerializer,
+    TimelineSerializer, OppUserDetailSerializer,
 )
 from .models import (
     MyUser, Profile,
@@ -25,9 +25,11 @@ from django.shortcuts import get_object_or_404
 import re
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
-from django.db.models import F, FloatField, ExpressionWrapper, Func, IntegerField
+from django.db.models import F, FloatField, ExpressionWrapper, Func, IntegerField, Q
 from django.db.models.functions import Now, ExtractYear
 from math import pi, radians
+from rest_framework import serializers
+from match.models import Block
 
 
 class VerifyPhoneAPIView(APIView):
@@ -39,7 +41,7 @@ class VerifyPhoneAPIView(APIView):
             if MyUser.objects.filter(phone_no=phone).exists():
                 return Response(
                     {
-                        "message": "This number already have an account. Please Login."
+                        "message": "This number is already Verified."
                     },
                     status=status.HTTP_403_FORBIDDEN
                 )
@@ -93,7 +95,7 @@ class VerifyOTPAPIView(APIView):
             
             if cached_otp == user_otp:
                 cache.delete(phone)
-                cache.set(f"{phone}_verified", True, timeout=6000)
+                # cache.set(f"{phone}_verified", True, timeout=6000)
                 MyUser.objects.create(phone_no=phone)
                 return Response(
                     {
@@ -105,19 +107,58 @@ class VerifyOTPAPIView(APIView):
             return Response({"error":"Invalid OTP"}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"error": "serializer is not valid."}, status=status.HTTP_400_BAD_REQUEST)
 
+# class ResendOTPAPIView(APIView):
+#     def post(self, request):
+#         serializer = ResendOTPSerializer(data=request.data)
+#         if serializer.is_valid():
+#             phone_no = serializer.validated_data['phone_no']
+            
+#             try:
+#                 user = MyUser.objects.get(phone_no=phone_no)
+
+#                 if user.is_verified:
+#                     return Response(
+#                         {"error": "This phone number is already verified. Please login."},
+#                         status=status.HTTP_400_BAD_REQUEST
+#                     )
+
+#                 # Rate-limiting logic (optional)
+#                 otp_code = random.randint(100000, 999999)
+#                 cache.set(f'otp_{phone_no}', otp_code, timeout=300)
+
+#                 send_mail(
+#                     subject='Resend Verification Code',
+#                     message=f'Your OTP code is {otp_code}. It will expire in 5 minutes.',
+#                     from_email=settings.EMAIL_HOST_USER,
+#                     recipient_list=[phone_no],
+#                     fail_silently=False
+#                 )
+
+#                 return Response({
+#                     "message": "OTP resent successfully.",
+#                     "phone_no": email
+#                 }, status=status.HTTP_200_OK)
+
+#             except MyUser.DoesNotExist:
+#                 return Response(
+#                     {"error": "No account with this email found."},
+#                     status=status.HTTP_404_NOT_FOUND
+#                 )
+#         else:
+#             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 class RegisterUserAPIView(APIView):
     def post(self, request):
         phone = request.data.get('phone_no')
-        if not MyUser.objects.filter(phone_no=phone).exists():
-            return Response(
-                {
-                    "message": "Verify your phone number first "
-                }
-            )
-        # if not cache.get(f"{phone}_verified"):
-        #     return Response({"error": "Phone not verified."}, status=status.HTTP_400_BAD_REQUEST)
         
+        user = get_object_or_404(MyUser, phone_no=phone)
+        
+        if user.email not in (None, ""):
+            raise serializers.ValidationError("User with this phone number already registered, please login. ")
+   
+        print(request.data)
         serializer = MyUserSerializer(data=request.data, context={'request':request})
+        
         if serializer.is_valid():
             serializer.save()
             return Response(
@@ -126,7 +167,7 @@ class RegisterUserAPIView(APIView):
                 },
                 status=status.HTTP_201_CREATED
             )
-        cache.delete(f"{phone}_verified")
+        print(serializer.errors)
         return Response({"message": "serializer error"}, status=status.HTTP_400_BAD_REQUEST)
 
 def get_access_token(user):
@@ -139,6 +180,7 @@ class LoginUserAPIView(APIView):
         serializer.is_valid(raise_exception=True)
         email = serializer.validated_data.get("email")
         password = serializer.validated_data.get("password")
+
 
         user = authenticate(request, username=email, password=password)
         if not user:
@@ -178,15 +220,9 @@ class LoginUserAPIView(APIView):
             )
 
 def parse_formdata_to_json(formdata):
-    """
-    Convert flat form-data with bracket notation into nested dict/list:
-    - images_data[0], images_data[1] -> [{'photo': ...}, ...]
-    - interests[0], interests[1] -> ['interest1', 'interest2', ...]
-    - other fields remain as-is
-    """
     data = {}
     images_list = []
-    list_fields = {}  # for interests or other bracketed lists
+    list_fields = {}
 
     for key, value in formdata.items():
         # Handle images_data separately
@@ -194,7 +230,19 @@ def parse_formdata_to_json(formdata):
             images_list.append({'photo': value})
             continue
 
-        # Handle bracketed list fields like interests[0], interests[1]
+        # Match nested list with dict keys: e.g. social_links[0][link_url]
+        m = re.match(r'(\w+)\[(\d+)\]\[(\w+)\]', key)
+        if m:
+            field, index, subfield = m.groups()
+            index = int(index)
+            if field not in list_fields:
+                list_fields[field] = []
+            while len(list_fields[field]) <= index:
+                list_fields[field].append({})
+            list_fields[field][index][subfield] = value
+            continue
+
+        # Match simple lists: e.g. interests[0]
         m = re.match(r'(\w+)\[(\d+)\]', key)
         if m:
             field, index = m.groups()
@@ -204,16 +252,17 @@ def parse_formdata_to_json(formdata):
             while len(list_fields[field]) <= index:
                 list_fields[field].append(None)
             list_fields[field][index] = value
-        else:
-            # Normal field
-            data[key] = value
+            continue
 
-    # Merge lists into data
+        # Normal field
+        data[key] = value
+
     if images_list:
         data['images_data'] = images_list
     data.update(list_fields)
 
     return data
+
 
 class SetupProfileAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -265,8 +314,8 @@ class DetailUserAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        user = request.user
-        serializer = ProfileSerializer(user, context={'request':request})
+        profile = request.user.profile
+        serializer = ProfileSerializer(profile, context={'request':request})
 
         return Response(
             {
@@ -283,7 +332,7 @@ class UpdateUserAPIView(APIView):
         json_data = parse_formdata_to_json(request.data)
         json_data = json_data.get('profile', json_data)
 
-        serializer = ProfileSerializer(data=json_data, instance=profile, partial=True, context={'request':request})
+        serializer = ProfileSerializer(instance=profile, data=json_data, partial=True, context={'request':request})
         serializer.is_valid(raise_exception=True)
         print(f"Data after validation : {serializer.validated_data}")
         serializer.save(profile=profile)
@@ -312,8 +361,18 @@ class TimelineAPIView(generics.ListAPIView):
     def get_queryset(self):
         user_profile = self.request.user.profile
 
-        # Base queryset
-        qs = Profile.objects.exclude(user=self.request.user)
+        # blocked_users = Block.objects.filter(blocker=self.request.user).values_list('blocked', flat=True)
+        blocked_users = Block.objects.filter(
+            Q(blocker=self.request.user) | Q(blocked=self.request.user)
+        ).values_list('blocked', 'blocker')
+
+        # flatten into list of ids
+        blocked_ids = [uid for pair in blocked_users for uid in pair]
+
+        qs = Profile.objects.exclude(user=self.request.user).exclude(user__in=blocked_ids)
+
+        # # Base queryset
+        # qs = Profile.objects.exclude(user=self.request.user).exclude(user__in=blocked_users)
 
         # Annotate age and distance only if user has location
         if user_profile.latitude is not None and user_profile.longitude is not None:
@@ -358,6 +417,24 @@ class TimelineAPIView(generics.ListAPIView):
 
         return qs
 
+class OppUserDetailAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):  
+        profile = get_object_or_404(Profile, id=pk)
+        # if request.user in profile.blocked_by.all():
+        #     return Response({"detail": "You cannot view this profile."}, status=403)
+
+        serializer = OppUserDetailSerializer(profile, context={'request':request})
+        return Response(
+            {
+                "data": serializer.data
+            },
+            status=status.HTTP_200_OK
+        )
+
+
+        
 
 # def parse_formdata_to_json(formdata):
 #     data = {}
