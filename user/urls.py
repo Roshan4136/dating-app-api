@@ -1,5 +1,6 @@
 from django.urls import path
 from .views import (
+    EmailAPIView, VerifyEmailAPIView,
     VerifyPhoneAPIView, VerifyOTPAPIView, RegisterUserAPIView,
     LoginUserAPIView, VerifyUserAPIView, DetailUserAPIView,
     UpdateUserAPIView, SetupProfileAPIView,TimelineAPIView,
@@ -11,6 +12,10 @@ urlpatterns = [
     path('send-otp/', VerifyPhoneAPIView.as_view(), name='send_otp'),
     path('verify-otp/', VerifyOTPAPIView.as_view(), name='verify_otp'),
 
+    # Email address verification
+    path('send_otp_in_email/', EmailAPIView.as_view(), name='send_otp_in_email'),
+    path('verify_otp_of_email/', VerifyEmailAPIView.as_view(), name='veriy_otp_of_email'),
+    
     # user registration
     path('register/', RegisterUserAPIView.as_view(), name='registration'),
     path('login/', LoginUserAPIView.as_view(), name='login'),

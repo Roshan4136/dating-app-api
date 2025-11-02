@@ -1,5 +1,4 @@
 # user/models.py
-
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
 from .manager import MyUserManager
@@ -28,25 +27,64 @@ class Gender(models.TextChoices):
     FEMALE = 'female', 'female'
     OTHER = 'other', 'other'
 
+class InterestedIn(models.TextChoices):
+    MAN = 'man', 'man'
+    WOMAN = 'woman', 'woman'
+    ALL = 'all', 'all'
+
 class Relationship(models.TextChoices):
+    SERIOUS_RELATIONSHIP = 'serious_relationship', 'serious_relationship'
+    SHORT_TERM_RELATIONSHIP = 'short_term_relationship', 'short_term_relationship'
     FRIENDSHIP = 'friendship', 'friendship'
-    DATING_ONLY = 'dating_only', 'dating_only'
-    MARRIAGE = 'marriage', 'marriage'
+    SHORT_TERM_FUN = 'short_term_fun', 'short_term_fun'
+    TEXT = 'text', 'text'
+    STILL_FIGURING_OUT = 'still_figuring_out', 'still_figuring_out'
 
 class SexualOrientation(models.TextChoices):
-    STRAIGHT = 'straight', 'straight'
-    GAY = 'gay', 'gay'
-    LESBIAN = 'lesbian', 'lesbian'
+    HETEROSEXUAL = 'heterosexual', 'heterosexual'
+    HOMOSEXUAL = 'homosexual', 'homosexual'
     BISEXUAL = 'bisexual', 'bisexual'
-    ASEXUAL = 'asexual', 'asexual'
-    DEMISEXUAL = 'demisexual', 'demisexual'
-    PANSEXUAL = 'pansexual', 'pansexual'
     QUEER = 'queer', 'queer'
-    QUESTIONING = 'questioning', 'questioning'
+    OTHER = 'other', 'other'
+
+class DrinkChoice(models.TextChoices):
+    NEVER = 'never', 'never'
+    SOCIALLY = 'socially', 'socially'
+    OCCASIONALLY = 'occasionally', 'occasionally'
+    OFTEN = 'often', 'often'
+
+class SmokeChoice(models.TextChoices):
+    NEVER = 'never', 'never'
+    SOCIALLY = 'socially', 'socially'
+    OCCASIONALLY = 'occasionally', 'occasionally'
+    OFTEN = 'often', 'often'
+
+class ActiveChoice(models.TextChoices):
+    NOT_REALLY = 'not_really', 'not_really'
+    SOMETIMES = 'sometimes', 'sometimes'
+    REGULARLY = 'regularly', 'regularly'
+    FITNESS_IS_LIFE = 'fitness_is_life', 'fitness_is_life'
+
+class DietChoice(models.TextChoices):
+    NO_PREFERENCE = 'no_preference', 'no_preference'
+    VEG = 'veg', 'veg'
+    NON_VEG = 'non_veg', 'non_veg'
+    OTHER = 'other', 'other'
+
+class TravelChoice(models.TextChoices):
+    HOMEBODY = 'homebody', 'homebody'
+    SOMETIMES = 'sometimes', 'sometimes'
+    LOVE_EXPLORING = 'love_exploring', 'love_exploring'
+    ALWAYS_PLANNING = 'always_planning', 'always_planning'
+
+class PetChoice(models.TextChoices):
+    LOVE_PETS = 'love_pets', 'love_pets'
+    OKAY_WITH_PETS = 'okay_with_pets', 'okay_with_pets'
+    PREFER_NO_PETS = 'prefer_no_pets', 'prefer_no_pets'
 
 class MyUser(AbstractBaseUser, PermissionsMixin):
     email = models.EmailField(max_length=100, unique=True, blank=True, null=True)
-    phone_no = PhoneNumberField(unique=True)
+    phone_no = PhoneNumberField(unique=True, null=True, blank=True)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -71,19 +109,18 @@ class MyUser(AbstractBaseUser, PermissionsMixin):
             return f"{self.phone_no} (id: {self.id})"
         return f"Unnamed User (id: {self.id})"
 
-    
 # hobbies
 class Interest(models.Model):
     name = models.CharField(max_length=50, unique=True)
 
     def __str__(self):
         return self.name
-    
-class LifestyleChoice(models.Model):
-    name = models.CharField(max_length=40, unique=True)
 
-    def __str__(self):
-        return self.name
+# class LifestyleChoice(models.Model):
+#     name = models.CharField(max_length=40, unique=True)
+
+#     def __str__(self):
+#         return self.name
 
 class Profile(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='profile')
@@ -96,11 +133,11 @@ class Profile(models.Model):
     bio = models.TextField(blank=True, null=True)
     location = models.CharField(max_length=50, blank=True, null=True)
     # location = gis_models.PointField(geography=True, blank=True, null=True)
-    intention = models.CharField(max_length=20, choices=Relationship.choices, blank=True, null=True)
+    intention = models.CharField(max_length=50, choices=Relationship.choices, blank=True, null=True)
     sexual_orientation = models.CharField(max_length=20, choices=SexualOrientation.choices, blank=True, null=True)
     show_orientation = models.BooleanField(default=False)
     interests = models.ManyToManyField(Interest, blank=True, related_name='profiles')
-    lifestyle_choices = models.ManyToManyField(LifestyleChoice, related_name='profiles_with_lifestyle')
+    # lifestyle_choices = models.ManyToManyField(LifestyleChoice, related_name='profiles_with_lifestyle')
     zodiac_sign = models.CharField(max_length=20, choices=ZodiacSign.choices, null=True, blank=True)
     show_zodiac = models.BooleanField(default=False)
     latitude = models.FloatField(blank=True, null=True)
@@ -124,6 +161,18 @@ class Profile(models.Model):
     def __str__(self):
         return f"{self.first_name} {self.last_name}, profile_id : {self.id} and user_id: {self.user.id}"
 
+class LifestyleChoice(models.Model):
+    profile = models.OneToOneField(Profile, on_delete=models.CASCADE, related_name='profiles_with_lifestyle', null=True)
+    drink_choice = models.CharField(max_length=20, choices=DrinkChoice.choices, blank=True, null=True)
+    smoke_choice = models.CharField(max_length=30, choices=SmokeChoice.choices, blank=True, null=True)
+    active_choice = models.CharField(max_length=30, choices=ActiveChoice.choices, blank=True, null=True)
+    diet_choice = models.CharField(max_length=30, choices=DietChoice.choices, blank=True, null=True)
+    travel_choice = models.CharField(max_length=30, choices=TravelChoice.choices, blank=True, null=True)
+    pet_choice = models.CharField(max_length=30, choices=PetChoice.choices, blank=True, null=True)
+
+    def __str__(self):
+        return f"lifestyle choice of {self.profile.user.email}"
+
 class Image(models.Model):
     profile = models.ForeignKey(Profile, related_name='images', on_delete=models.CASCADE)
     photo = models.ImageField(upload_to='user_photos/', blank=True, null=True)
@@ -142,8 +191,4 @@ class SocialLink(models.Model):
         
     def __str__(self):
         return f"social link of {self.profile.user.email}"
-
-    
-
-
 

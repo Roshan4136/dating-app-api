@@ -1,24 +1,23 @@
 from rest_framework import serializers
 from .models import(
-    MyUser, Profile, Image, Interest, LifestyleChoice,
-    SocialLink,
+    MyUser, Profile, Image, Interest,
+    SocialLink, LifestyleChoice,
 )
 
+class EmailSerializer(serializers.Serializer):
+    email = serializers.EmailField(max_length=100)
+    password = serializers.CharField(max_length=100, required=True)
+
+class VerifyEmailSerializer(serializers.Serializer):
+    email = serializers.EmailField(max_length=100)
+    otp = serializers.IntegerField()
+    
 class PhoneSerializer(serializers.Serializer):
     phone_no = serializers.CharField(max_length=15)
-    # email
-    
-    # def validate_phone_no(self, value):
-    #     if not value.startswith("+"):
-    #         raise serializers.ValidationError("Phone number must be in E.164 format (+97798xxxxxxxx).")
-    #     return value
 
 class VerifyOtpSerializer(serializers.Serializer):
     phone_no = serializers.CharField(max_length=15)
     otp = serializers.IntegerField()
-
-# class ResendOTPSerializer(serializers.Serializer):
-#     phone_no = serializers.CharField()
 
 class ImageSerializer(serializers.ModelSerializer):
     class Meta:
@@ -38,9 +37,12 @@ class InterestSerializer(serializers.ModelSerializer):
 class LifestyleSerializer(serializers.ModelSerializer):
     class Meta:
         model = LifestyleChoice
-        fields = ['id', 'name']
+        fields = ['id', 'drink_choice', 'smoke_choice', 'active_choice', 'diet_choice', 'pet_choice', 'travel_choice']
 
 class ProfileSerializer(serializers.ModelSerializer):
+    lifestyle = LifestyleSerializer(required=False)
+    lifestyle_info = LifestyleSerializer(source='profiles_with_lifestyle', read_only=True)
+
     images_data = ImageSerializer(many=True, write_only=True, required=False)
     images_list = ImageSerializer(source='images', many=True, read_only=True)
     social_links = SocialLinkSerializer(many=True, write_only=True, required=False)
@@ -51,13 +53,6 @@ class ProfileSerializer(serializers.ModelSerializer):
         write_only=True  # only for write
     )
     interests_list = InterestSerializer(many=True, source='interests', read_only=True)  # for read
-    lifestyles = serializers.ListField(
-        child=serializers.CharField(max_length=50),
-        required=False,
-        write_only=True  # only for write
-    )
-    lifestyle_list = LifestyleSerializer(many=True, source='lifestyle_choices', read_only=True)
-    
 
     class Meta:
         model = Profile
@@ -65,16 +60,20 @@ class ProfileSerializer(serializers.ModelSerializer):
             'id', 'first_name', 'gender', 'last_name', 'profile_pic', 'dob', 'looking_for',
             'intention', 'sexual_orientation', 'show_orientation', 'bio', 'location', 'images_data',
             'interests', 'interests_list', 'images_list', 'latitude', 'longitude',
-            'zodiac_sign', 'show_zodiac', 'lifestyles', 'lifestyle_list', 'social_links', 'social_links_list',
+            'zodiac_sign', 'show_zodiac', 'lifestyle', 'social_links', 'social_links_list', 'lifestyle_info',
         ]
 
     def create(self, validated_data):
+        lifestyle_data = validated_data.pop('lifestyle', None)
         images_data = validated_data.pop('images_data', [])
         interests_data = validated_data.pop('interests', [])
-        lifestyle_data = validated_data.pop('lifestyles',[])
+        # lifestyle_data = validated_data.pop('lifestyles',[])
         social_links_data = validated_data.pop('social_links', [])
 
         profile = Profile.objects.create(**validated_data)
+
+        if lifestyle_data:
+            LifestyleChoice.objects.create(profile=profile, **lifestyle_data)
 
         # images
         for image in images_data:
@@ -90,26 +89,26 @@ class ProfileSerializer(serializers.ModelSerializer):
             obj, _ = Interest.objects.get_or_create(name=name)
             interest_objs.append(obj)
         profile.interests.set(interest_objs) 
-    
-        # lifestyle choices
-        lifestyle_objs = []
-        for name in lifestyle_data:
-            obj, _ = LifestyleChoice.objects.get_or_create(name=name)
-            lifestyle_objs.append(obj)
-        profile.lifestyle_choices.set(lifestyle_objs)
 
         return profile
 
     def update(self, instance, validated_data):
+        lifestyle_data = validated_data.pop('lifestyle', None)
         images_data = validated_data.pop('images_data', [])
         interests_data = validated_data.pop('interests', [])
-        lifestyles_data = validated_data.pop('lifestyles', [])
         social_links_data = validated_data.pop('social_links', [])
 
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
 
+        # Update or create lifestyle
+        if lifestyle_data:
+            LifestyleChoice.objects.update_or_create(
+                profile=instance,
+                defaults=lifestyle_data
+            )
+            
         if images_data:
             # instance.images.all().delete()
             for image in images_data:
@@ -117,7 +116,7 @@ class ProfileSerializer(serializers.ModelSerializer):
 
         if social_links_data:
             for link_url in social_links_data:
-                SocialLink.objects.create(profile=instance, **link_url)
+                SocialLink.objects.get_or_create(profile=instance, **link_url)
 
         # Update or add images
         # for image in images_data:
@@ -141,19 +140,12 @@ class ProfileSerializer(serializers.ModelSerializer):
                 interest_objs.append(obj)
             instance.interests.set(interest_objs)
 
-        # Update lifestyles
-        if lifestyles_data:
-            lifestyle_objs = []
-            for name in lifestyles_data:
-                obj, _ = LifestyleChoice.objects.get_or_create(name=name)
-                lifestyle_objs.append(obj)
-            instance.lifestyle_choices.set(lifestyle_objs)
-
         return instance    
 
 class MyUserSerializer(serializers.ModelSerializer):
     # profile = ProfileSerializer(required=False)
-    phone_no = serializers.CharField()
+    # email = serializers.EmailField(write_only=True, required=False)
+    phone_no = serializers.CharField(required=False)
     password = serializers.CharField(write_only=True)
 
     class Meta:
@@ -168,7 +160,6 @@ class MyUserSerializer(serializers.ModelSerializer):
 
         if MyUser.objects.filter(email=email).exists():
             raise serializers.ValidationError("User with this email already exists, please login. ")
-
         try:
             user = MyUser.objects.get(phone_no=phone_no)
         except MyUser.DoesNotExist:
@@ -204,8 +195,8 @@ class LoginUserSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField()
 
+# not in use
 class VerifyUserSerializer(serializers.Serializer):
-
     email = serializers.EmailField()
     otp = serializers.CharField()
 
@@ -225,9 +216,9 @@ class TimelineSerializer(serializers.ModelSerializer):
         ]
 
 class OppUserDetailSerializer(serializers.ModelSerializer):
-
     interests_list = InterestSerializer(many=True, read_only=True)  # for read
-    lifestyle_list = LifestyleSerializer(many=True, read_only=True)
+    lifestyle = LifestyleSerializer(read_only=True)
+    # lifestyle_list = LifestyleSerializer(many=True, read_only=True)
     images_list = ImageSerializer(many=True, read_only=True)
     social_links = SocialLinkSerializer(many=True, read_only=True)
 
@@ -237,13 +228,13 @@ class OppUserDetailSerializer(serializers.ModelSerializer):
             'id', 'first_name', 'gender', 'last_name', 'profile_pic', 'dob', 'looking_for',
             'intention', 'sexual_orientation', 'show_orientation', 'bio', 'location', 
             'interests_list', 'images_list', 'latitude', 'longitude', 'social_links',
-            'zodiac_sign', 'show_zodiac', 'lifestyle_list', 
+            'zodiac_sign', 'show_zodiac', 'lifestyle', 
         ]
         read_only_fields = [
             'id', 'first_name', 'gender', 'last_name', 'profile_pic', 'dob', 'looking_for',
             'intention', 'sexual_orientation', 'show_orientation', 'bio', 'location', 
             'interests_list', 'images_list', 'latitude', 'longitude', 'social_links',
-            'zodiac_sign', 'show_zodiac', 'lifestyle_list', 
+            'zodiac_sign', 'show_zodiac', 'lifestyle', 
         ]
 
 

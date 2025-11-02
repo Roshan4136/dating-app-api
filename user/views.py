@@ -7,13 +7,14 @@ from rest_framework import (
 from django.core.cache import cache
 import random
 from .serializers import (
+    EmailSerializer, VerifyEmailSerializer,
     PhoneSerializer, VerifyOtpSerializer,
     ProfileSerializer, MyUserSerializer,
     LoginUserSerializer, VerifyUserSerializer,
     TimelineSerializer, OppUserDetailSerializer,
 )
 from .models import (
-    MyUser, Profile,
+    MyUser, Profile, LifestyleChoice,
 )
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import IsAuthenticated
@@ -30,8 +31,93 @@ from django.db.models.functions import Now, ExtractYear
 from math import pi, radians
 from rest_framework import serializers
 from match.models import Block
+from django.contrib.auth.hashers import make_password
 
+class EmailAPIView(APIView):
+    def post(self, request):
+        serializer = EmailSerializer(data=request.data)
+        if serializer.is_valid():
+            email = serializer.validated_data['email']
+            password = serializer.validated_data['password']
 
+            if MyUser.objects.filter(email=email).exists():
+                return Response(
+                    {
+                        "message": "This email is already Verified."
+                    },
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            otp_for_email = random.randint(100000, 999999)
+
+            # password hashing
+            hashed_password = make_password(password)
+
+            cache.set(email, {"otp_for_email":otp_for_email, "password": hashed_password}, timeout=300)
+            send_mail(
+                subject="Your Verification code for signup.",
+                message=f"your OTP Code is {otp_for_email}. It will expire in 3 minutes",
+                from_email=settings.EMAIL_HOST_USER,
+                recipient_list=[email],
+                fail_silently=False
+                
+            )
+            
+            return Response(
+                {
+                    "message": "OTP sent successfully",
+                    "email": email
+                },
+                status=status.HTTP_200_OK
+            )
+        return Response(
+            {
+                "error": "serializer is not valid."
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+class VerifyEmailAPIView(APIView):
+    def post(self, request):
+        serializer = VerifyEmailSerializer(data=request.data)
+        if serializer.is_valid():
+            email = serializer.validated_data['email']
+
+            user_otp = serializer.validated_data['otp']
+
+            if MyUser.objects.filter(email=email).exists():
+                return Response({'message':'account with this email address already exists. please login'}, status=status.HTTP_403_FORBIDDEN)
+
+            cached_data = cache.get(email)
+            if cached_data is None:
+                return Response(
+                    {
+                        "error": "OTP expired or not found."
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            if str(cached_data["otp_for_email"]) == str(user_otp):
+            # if cached_data == user_otp:
+                
+                # cache.set(f"{phone}_verified", True, timeout=6000)
+                MyUser.objects.create(
+                    email=email,
+                    password=cached_data["password"],
+                    is_verified=True
+                )
+                cache.delete(email)
+                return Response(
+                    {
+                        "message": "OTP verified. Proceed to profile setup.",
+                        "email": email
+                    },
+                    status=status.HTTP_200_OK
+                )
+            return Response({"error":"Invalid OTP"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"error": "serializer is not valid."}, status=status.HTTP_400_BAD_REQUEST)
+
+# not in use
 class VerifyPhoneAPIView(APIView):
     def post(self, request):
         serializer = PhoneSerializer(data=request.data)
@@ -73,7 +159,8 @@ class VerifyPhoneAPIView(APIView):
             },
             status=status.HTTP_400_BAD_REQUEST
         )
-        
+
+# not in use        
 class VerifyOTPAPIView(APIView):
     def post(self, request):
         serializer = VerifyOtpSerializer(data=request.data)
@@ -107,46 +194,7 @@ class VerifyOTPAPIView(APIView):
             return Response({"error":"Invalid OTP"}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"error": "serializer is not valid."}, status=status.HTTP_400_BAD_REQUEST)
 
-# class ResendOTPAPIView(APIView):
-#     def post(self, request):
-#         serializer = ResendOTPSerializer(data=request.data)
-#         if serializer.is_valid():
-#             phone_no = serializer.validated_data['phone_no']
-            
-#             try:
-#                 user = MyUser.objects.get(phone_no=phone_no)
-
-#                 if user.is_verified:
-#                     return Response(
-#                         {"error": "This phone number is already verified. Please login."},
-#                         status=status.HTTP_400_BAD_REQUEST
-#                     )
-
-#                 # Rate-limiting logic (optional)
-#                 otp_code = random.randint(100000, 999999)
-#                 cache.set(f'otp_{phone_no}', otp_code, timeout=300)
-
-#                 send_mail(
-#                     subject='Resend Verification Code',
-#                     message=f'Your OTP code is {otp_code}. It will expire in 5 minutes.',
-#                     from_email=settings.EMAIL_HOST_USER,
-#                     recipient_list=[phone_no],
-#                     fail_silently=False
-#                 )
-
-#                 return Response({
-#                     "message": "OTP resent successfully.",
-#                     "phone_no": email
-#                 }, status=status.HTTP_200_OK)
-
-#             except MyUser.DoesNotExist:
-#                 return Response(
-#                     {"error": "No account with this email found."},
-#                     status=status.HTTP_404_NOT_FOUND
-#                 )
-#         else:
-#             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+# not in use
 class RegisterUserAPIView(APIView):
     def post(self, request):
         phone = request.data.get('phone_no')
@@ -253,6 +301,15 @@ def parse_formdata_to_json(formdata):
                 list_fields[field].append(None)
             list_fields[field][index] = value
             continue
+        
+        # ✅ NEW: handle nested dict without index
+        m = re.match(r'(\w+)\[(\w+)\]', key)
+        if m:
+            field, subfield = m.groups()
+            if field not in data:
+                data[field] = {}
+            data[field][subfield] = value
+            continue
 
         # Normal field
         data[key] = value
@@ -271,13 +328,15 @@ class SetupProfileAPIView(APIView):
     def post(self, request):
         print(request.data)
         json_data = parse_formdata_to_json(request.data)
+        print(f"after parsing:    {json_data}")
         serializer = ProfileSerializer(data=json_data, context={'request':request})
         serializer.is_valid(raise_exception=True)
-        serializer.save(user=request.user)    
+        profile = serializer.save(user=request.user) 
+        response_serializer = ProfileSerializer(profile, context={'request': request})
         return Response(
             {
                 "message": "profile setup completed. ",
-                "data" : serializer.data
+                "data" : response_serializer.data
             },
             status=status.HTTP_200_OK
         )   
@@ -432,9 +491,7 @@ class OppUserDetailAPIView(APIView):
             },
             status=status.HTTP_200_OK
         )
-
-
-        
+ 
 
 # def parse_formdata_to_json(formdata):
 #     data = {}

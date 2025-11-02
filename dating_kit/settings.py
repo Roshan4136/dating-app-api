@@ -66,6 +66,9 @@ INSTALLED_APPS = [
 
     # for swagger
     'drf_spectacular',
+
+    # for react
+    'corsheaders',
 ]
 
 
@@ -78,6 +81,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
 ]
 
 ROOT_URLCONF = 'dating_kit.urls'
@@ -266,11 +270,11 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 52428800  # 50 MB
 #     ...
 # ]
 
-# CORS_ALLOWED_ORIGINS = [
-#     "http://192.168.1.2:5173",  # React dev server address
-# ]
+CORS_ALLOWED_ORIGINS = [
+    "http://192.168.1.24:5173",  # React dev server address
+]
 
-# CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = True
 # This lets React send requests to your backend without being blocked by the browser.
 
 # MEDIA_URL = '/media/'
