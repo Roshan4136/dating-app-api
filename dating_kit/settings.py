@@ -14,9 +14,7 @@ from pathlib import Path
 import os
 import environ
 from datetime import timedelta
-
 import cloudinary
-
 
 # Initialise environment variables
 env = environ.Env(
@@ -25,7 +23,6 @@ env = environ.Env(
 
 # URL that serves media files
 MEDIA_URL = '/media/'
-
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -45,8 +42,8 @@ SECRET_KEY = env('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env('DEBUG')
 
-ALLOWED_HOSTS = []
-
+ALLOWED_HOSTS = ['*']
+# ALLOWED_HOSTS = ['192.168.1.19', 'localhost', '127.0.0.1']
 
 # Application definition
 
@@ -70,8 +67,6 @@ INSTALLED_APPS = [
     # for react
     'corsheaders',
 ]
-
-
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -127,6 +122,7 @@ DATABASES = {
         'PORT': env('DB_PORT')
     }
 }
+
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
 
@@ -145,7 +141,6 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
@@ -156,7 +151,6 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 
 USE_TZ = True
-
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
@@ -178,7 +172,6 @@ CACHES = {
     }
 }
 
-
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
@@ -187,7 +180,6 @@ CHANNEL_LAYERS = {
         },
     },
 }
-
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
@@ -204,7 +196,6 @@ REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
-
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(days=1),     # Short token lifespan = safer
 #     # 'REFRESH_TOKEN_LIFETIME': timedelta(days=10),
@@ -214,7 +205,6 @@ SIMPLE_JWT = {
 #     'SIGNING_KEY': SECRET_KEY,
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
-
 
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
@@ -270,9 +260,9 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 52428800  # 50 MB
 #     ...
 # ]
 
-CORS_ALLOWED_ORIGINS = [
-    "http://192.168.1.24:5173",  # React dev server address
-]
+# CORS_ALLOWED_ORIGINS = [
+#     "http://192.168.1.3:3000",  # React dev server address
+# ]
 
 CORS_ALLOW_ALL_ORIGINS = True
 # This lets React send requests to your backend without being blocked by the browser.

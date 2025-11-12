@@ -1,8 +1,9 @@
 from rest_framework import serializers
 from .models import(
-    MyUser, Profile, Image, Interest,
+    MyUser, Profile, Image, Hobby,
     SocialLink, LifestyleChoice,
 )
+from django.contrib.auth.hashers import check_password
 
 class EmailSerializer(serializers.Serializer):
     email = serializers.EmailField(max_length=100)
@@ -27,12 +28,13 @@ class ImageSerializer(serializers.ModelSerializer):
 class SocialLinkSerializer(serializers.ModelSerializer):
     class Meta:
         model = SocialLink
-        fields = ['id', 'link_url']
+        fields = ['id', 'link_url', 'platform']
 
-class InterestSerializer(serializers.ModelSerializer):
+class HobbySerializer(serializers.ModelSerializer):
+    
     class Meta:
-        model = Interest
-        fields = ['id', 'name']
+        model = Hobby
+        fields = ['id', 'name', 'predefined',]
 
 class LifestyleSerializer(serializers.ModelSerializer):
     class Meta:
@@ -47,26 +49,32 @@ class ProfileSerializer(serializers.ModelSerializer):
     images_list = ImageSerializer(source='images', many=True, read_only=True)
     social_links = SocialLinkSerializer(many=True, write_only=True, required=False)
     social_links_list = SocialLinkSerializer(source='social_links', many=True, read_only=True)
-    interests = serializers.ListField(
+    hobbies = serializers.ListField(
         child=serializers.CharField(max_length=50),
         required=False,
         write_only=True  # only for write
     )
-    interests_list = InterestSerializer(many=True, source='interests', read_only=True)  # for read
+    hobbies_list = HobbySerializer(many=True, source='hobbies', read_only=True)  # for read
 
     class Meta:
         model = Profile
         fields = [
-            'id', 'first_name', 'gender', 'last_name', 'profile_pic', 'dob', 'looking_for',
-            'intention', 'sexual_orientation', 'show_orientation', 'bio', 'location', 'images_data',
-            'interests', 'interests_list', 'images_list', 'latitude', 'longitude',
+            'id', 'full_name', 'gender', 'interested_in', 'profile_pic', 'dob', 'relationship',
+            'sexual_orientation', 'show_orientation', 'bio', 'location', 'images_data',
+            'hobbies', 'hobbies_list', 'images_list', 'latitude', 'longitude',
             'zodiac_sign', 'show_zodiac', 'lifestyle', 'social_links', 'social_links_list', 'lifestyle_info',
         ]
 
     def create(self, validated_data):
+        user = self.context['request'].user
+        # if Profile.objects.filter(user=user).exists():
+
+        if Profile.objects.filter(user=user).exists():
+            raise serializers.ValidationError("Profile already exists for this user.")  
+        
         lifestyle_data = validated_data.pop('lifestyle', None)
         images_data = validated_data.pop('images_data', [])
-        interests_data = validated_data.pop('interests', [])
+        hobbies_data = validated_data.pop('hobbies', [])
         # lifestyle_data = validated_data.pop('lifestyles',[])
         social_links_data = validated_data.pop('social_links', [])
 
@@ -84,18 +92,18 @@ class ProfileSerializer(serializers.ModelSerializer):
             SocialLink.objects.create(profile=profile, **link_url)
 
         # interests
-        interest_objs = []
-        for name in interests_data:
-            obj, _ = Interest.objects.get_or_create(name=name)
-            interest_objs.append(obj)
-        profile.interests.set(interest_objs) 
-
+        hobbies_objs = []
+        for name in hobbies_data:
+            clean_name = name.strip().lower()
+            obj, created = Hobby.objects.get_or_create(name=clean_name, defaults={'predefined': False})
+            hobbies_objs.append(obj)
+        profile.hobbies.set(hobbies_objs) 
         return profile
 
     def update(self, instance, validated_data):
         lifestyle_data = validated_data.pop('lifestyle', None)
         images_data = validated_data.pop('images_data', [])
-        interests_data = validated_data.pop('interests', [])
+        hobbies_data = validated_data.pop('hobbies', [])
         social_links_data = validated_data.pop('social_links', [])
 
         for attr, value in validated_data.items():
@@ -115,8 +123,13 @@ class ProfileSerializer(serializers.ModelSerializer):
                 Image.objects.create(profile=instance, **image)
 
         if social_links_data:
+
             for link_url in social_links_data:
-                SocialLink.objects.get_or_create(profile=instance, **link_url)
+                SocialLink.objects.update_or_create(
+                    profile=instance,
+                    link_url=link_url['link_url'],
+                    defaults={'platform': link_url.get('platform', '')}     # update platform if exists
+                )
 
         # Update or add images
         # for image in images_data:
@@ -133,12 +146,12 @@ class ProfileSerializer(serializers.ModelSerializer):
         #         Image.objects.create(profile=instance, **image)
 
         # Update interests
-        if interests_data:
-            interest_objs = []
-            for name in interests_data:
-                obj, _ = Interest.objects.get_or_create(name=name)
-                interest_objs.append(obj)
-            instance.interests.set(interest_objs)
+        if hobbies_data:
+            hobbies_objs = []
+            for name in hobbies_data:
+                obj, _ = Hobby.objects.get_or_create(name=name)
+                hobbies_objs.append(obj)
+            instance.hobbies.set(hobbies_objs)
 
         return instance    
 
@@ -202,7 +215,7 @@ class VerifyUserSerializer(serializers.Serializer):
 
 class TimelineSerializer(serializers.ModelSerializer):
     images_list = ImageSerializer(source='images', many=True, read_only=True)
-    interests_list = InterestSerializer(many=True, source='interests', read_only=True)
+    hobbies_list = HobbySerializer(many=True, source='hobbies', read_only=True)
     age = serializers.ReadOnlyField()            # from the model property
     distance = serializers.FloatField(read_only=True)
     user_id = serializers.IntegerField(source='user.id', read_only=True)
@@ -212,11 +225,11 @@ class TimelineSerializer(serializers.ModelSerializer):
         fields = [
             'user_id', 'id', 'first_name', 'profile_pic', 'dob', 
             'bio', 'location', 'distance',
-            'interests_list', 'images_list','age',
+            'hobbies_list', 'images_list','age',
         ]
 
 class OppUserDetailSerializer(serializers.ModelSerializer):
-    interests_list = InterestSerializer(many=True, read_only=True)  # for read
+    hobbies_list = HobbySerializer(many=True, read_only=True)  # for read
     lifestyle = LifestyleSerializer(read_only=True)
     # lifestyle_list = LifestyleSerializer(many=True, read_only=True)
     images_list = ImageSerializer(many=True, read_only=True)
@@ -225,16 +238,48 @@ class OppUserDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = Profile
         fields = [
-            'id', 'first_name', 'gender', 'last_name', 'profile_pic', 'dob', 'looking_for',
-            'intention', 'sexual_orientation', 'show_orientation', 'bio', 'location', 
-            'interests_list', 'images_list', 'latitude', 'longitude', 'social_links',
+            'id', 'full_name', 'gender', 'profile_pic', 'dob', 'interested_in',
+            'relationship', 'sexual_orientation', 'show_orientation', 'bio', 'location', 
+            'hobbies_list', 'images_list', 'latitude', 'longitude', 'social_links',
             'zodiac_sign', 'show_zodiac', 'lifestyle', 
         ]
         read_only_fields = [
-            'id', 'first_name', 'gender', 'last_name', 'profile_pic', 'dob', 'looking_for',
-            'intention', 'sexual_orientation', 'show_orientation', 'bio', 'location', 
-            'interests_list', 'images_list', 'latitude', 'longitude', 'social_links',
+            'id', 'first_name', 'gender', 'last_name', 'profile_pic', 'dob', 'interested_in',
+            'relationship', 'sexual_orientation', 'show_orientation', 'bio', 'location', 
+            'hobbies_list', 'images_list', 'latitude', 'longitude', 'social_links',
             'zodiac_sign', 'show_zodiac', 'lifestyle', 
         ]
 
+class ChangePasswordSerializer(serializers.Serializer):
+    old_password = serializers.CharField(max_length=100)
+    new_password = serializers.CharField(max_length=100)
+    confirm_password = serializers.CharField(max_length=100)
+
+    def validate(self, attrs):
+        user = self.context['request'].user
+        old_password = attrs.get('old_password')
+        new_password = attrs.get('new_password')
+        confirm_password = attrs.get('confirm_password')
+
+        if not check_password(old_password, user.password):
+            raise serializers.ValidationError(
+                {
+                    "old_password": "Incorrect old password."
+                }
+            )
+        
+        if new_password != confirm_password:
+            raise serializers.ValidationError({"confirm_password": "passwords do not match."})
+        
+        if len(new_password) < 6:
+            raise serializers.ValidationError({"new_password": "Passwords must be at least 6 characters long. "})
+        
+        return attrs
+    
+    def save(self, **kwargs):
+        user = self.context['request'].user
+        new_password = self.validated_data['new_password']
+        user.set_password(new_password)  # hashes automatically
+        user.save()
+        return user
 

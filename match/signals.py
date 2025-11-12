@@ -3,7 +3,6 @@ from django.dispatch import receiver
 from .models import Swipe
 from .models import Match
 
-
 @receiver(post_save, sender=Swipe)
 def create_match(sender, instance, created, **kwargs):
     from_user = instance.from_user

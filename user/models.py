@@ -5,6 +5,7 @@ from .manager import MyUserManager
 from phonenumber_field.modelfields import PhoneNumberField
 from django.conf import settings
 from datetime import date
+import os
 # from django.contrib.gis.db import models as gis_models
 
 # Create your models here.
@@ -82,6 +83,15 @@ class PetChoice(models.TextChoices):
     OKAY_WITH_PETS = 'okay_with_pets', 'okay_with_pets'
     PREFER_NO_PETS = 'prefer_no_pets', 'prefer_no_pets'
 
+class Platform(models.TextChoices):
+    FACEBOOK = 'facebook', 'facebook'
+    INSTAGRAM = 'instagram', 'instagram'
+    TWITTER = 'twitter', 'twitter'
+    LINKEDIN = 'linkedin', 'linkedin'
+    SNAPCHAT = 'snapchat', 'snapchat'
+    TIKTOK = 'tiktok', 'tiktok'
+    OTHER = 'other', 'other'
+
 class MyUser(AbstractBaseUser, PermissionsMixin):
     email = models.EmailField(max_length=100, unique=True, blank=True, null=True)
     phone_no = PhoneNumberField(unique=True, null=True, blank=True)
@@ -89,12 +99,12 @@ class MyUser(AbstractBaseUser, PermissionsMixin):
     is_staff = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    is_verified = models.BooleanField(default=False)
+    # is_verified = models.BooleanField(default=False)
     
     objects = MyUserManager()
 
     USERNAME_FIELD = 'email'
-    REQUIRED_FIELDS = ['phone_no']
+    REQUIRED_FIELDS = []
 
     def save(self, *args, **kwargs):
         if self.email:
@@ -110,39 +120,36 @@ class MyUser(AbstractBaseUser, PermissionsMixin):
         return f"Unnamed User (id: {self.id})"
 
 # hobbies
-class Interest(models.Model):
+class Hobby(models.Model):
     name = models.CharField(max_length=50, unique=True)
+    predefined = models.BooleanField(default=True)
 
     def __str__(self):
         return self.name
 
-# class LifestyleChoice(models.Model):
-#     name = models.CharField(max_length=40, unique=True)
-
-#     def __str__(self):
-#         return self.name
-
 class Profile(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='profile')
-    first_name = models.CharField(max_length=50, blank=True, null=True)
-    last_name = models.CharField(max_length=50, blank=True, null=True)
+    full_name = models.CharField(max_length=50, blank=True, null=True)
+    # last_name = models.CharField(max_length=50, blank=True, null=True)
     gender = models.CharField(max_length=10, choices=Gender.choices, blank=True, null=True)
+    interested_in = models.CharField(max_length=10, choices=InterestedIn.choices, blank=True, null=True)
     profile_pic = models.ImageField(upload_to='user_pp/',blank=True, null=True)
     dob = models.DateField(blank=True, null=True)
-    looking_for = models.CharField(max_length=10, choices=Gender.choices, blank=True, null=True)
+    # looking_for = models.CharField(max_length=10, choices=Gender.choices, blank=True, null=True)
     bio = models.TextField(blank=True, null=True)
     location = models.CharField(max_length=50, blank=True, null=True)
     # location = gis_models.PointField(geography=True, blank=True, null=True)
-    intention = models.CharField(max_length=50, choices=Relationship.choices, blank=True, null=True)
+    # intention = models.CharField(max_length=50, choices=Relationship.choices, blank=True, null=True)
     sexual_orientation = models.CharField(max_length=20, choices=SexualOrientation.choices, blank=True, null=True)
     show_orientation = models.BooleanField(default=False)
-    interests = models.ManyToManyField(Interest, blank=True, related_name='profiles')
+    hobbies = models.ManyToManyField(Hobby, blank=True, related_name='profiles')
     # lifestyle_choices = models.ManyToManyField(LifestyleChoice, related_name='profiles_with_lifestyle')
     zodiac_sign = models.CharField(max_length=20, choices=ZodiacSign.choices, null=True, blank=True)
     show_zodiac = models.BooleanField(default=False)
     latitude = models.FloatField(blank=True, null=True)
     longitude = models.FloatField(blank=True, null=True)
-    
+    relationship = models.CharField(max_length=100, choices=Relationship.choices, blank=True, null=True)
+
     class Meta:
         indexes = [
             models.Index(fields=["latitude", "longitude"]),  # for geo/location queries
@@ -159,7 +166,7 @@ class Profile(models.Model):
         return age
         
     def __str__(self):
-        return f"{self.first_name} {self.last_name}, profile_id : {self.id} and user_id: {self.user.id}"
+        return f"{self.full_name}, profile_id : {self.id} and user_id: {self.user.id}"
 
 class LifestyleChoice(models.Model):
     profile = models.OneToOneField(Profile, on_delete=models.CASCADE, related_name='profiles_with_lifestyle', null=True)
@@ -178,12 +185,19 @@ class Image(models.Model):
     photo = models.ImageField(upload_to='user_photos/', blank=True, null=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
+    def delete(self, *args, **kwargs):
+        # Delete the image file from storage before deleting the model instance
+        if self.photo:
+            self.photo.delete(save=False)
+        super().delete(*args, **kwargs)
+
     def __str__(self):
         return f"photo of {self.profile.user.email}"
 
 class SocialLink(models.Model):
     profile = models.ForeignKey(Profile, related_name='social_links', on_delete=models.CASCADE)
     link_url = models.URLField(blank=True, null=True)
+    platform = models.CharField(max_length=20, choices=Platform.choices, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -192,3 +206,8 @@ class SocialLink(models.Model):
     def __str__(self):
         return f"social link of {self.profile.user.email}"
 
+# class LifestyleChoice(models.Model):
+#     name = models.CharField(max_length=40, unique=True)
+
+#     def __str__(self):
+#         return self.name

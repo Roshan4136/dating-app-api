@@ -12,9 +12,10 @@ from .serializers import (
     ProfileSerializer, MyUserSerializer,
     LoginUserSerializer, VerifyUserSerializer,
     TimelineSerializer, OppUserDetailSerializer,
+    ChangePasswordSerializer, HobbySerializer,
 )
 from .models import (
-    MyUser, Profile, LifestyleChoice,
+    MyUser, Profile, LifestyleChoice, Hobby,
 )
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import IsAuthenticated
@@ -32,7 +33,13 @@ from math import pi, radians
 from rest_framework import serializers
 from match.models import Block
 from django.contrib.auth.hashers import make_password
+from django.contrib.auth import get_user_model
 
+def get_access_token(user):
+    token = AccessToken.for_user(user)
+    return str(token)
+
+# ...existing code...
 class EmailAPIView(APIView):
     def post(self, request):
         serializer = EmailSerializer(data=request.data)
@@ -43,17 +50,15 @@ class EmailAPIView(APIView):
             if MyUser.objects.filter(email=email).exists():
                 return Response(
                     {
-                        "message": "This email is already Verified."
+                        "message": "This email exists."
                     },
                     status=status.HTTP_403_FORBIDDEN
                 )
 
             otp_for_email = random.randint(100000, 999999)
 
-            # password hashing
-            hashed_password = make_password(password)
-
-            cache.set(email, {"otp_for_email":otp_for_email, "password": hashed_password}, timeout=300)
+            # store raw password temporarily (short timeout) so create_user can hash it correctly
+            cache.set(email, {"otp_for_email": otp_for_email, "password": password}, timeout=300)
             send_mail(
                 subject="Your Verification code for signup.",
                 message=f"your OTP Code is {otp_for_email}. It will expire in 3 minutes",
@@ -77,45 +82,104 @@ class EmailAPIView(APIView):
             status=status.HTTP_400_BAD_REQUEST
         )
     
+# class ResendOtpAPIView(APIView):
+#     def post(self, request):
+#         serializer = EmailSerializer(data=request.data)
+#         if serializer.is_valid():
+#             email = serializer.validated_data['email']
+
+#             cached_data = cache.get(email)
+#             if cached_data is None:
+#                 return Response(
+#                     {
+#                         "error": "No pending verification found for this email."
+#                     },
+#                     status=status.HTTP_400_BAD_REQUEST
+#                 )
+
+#             otp_for_email = random.randint(100000, 999999)
+#             cached_data["otp_for_email"] = otp_for_email
+#             cache.set(email, cached_data, timeout=300)
+
+#             send_mail(
+#                 subject="Your Verification code for signup.",
+#                 message=f"your OTP Code is {otp_for_email}. It will expire in 3 minutes",
+#                 from_email=settings.EMAIL_HOST_USER,
+#                 recipient_list=[email],
+#                 fail_silently=False
+                
+#             )
+            
+#             return Response(
+#                 {
+#                     "message": "OTP resent successfully",
+#                     "email": email
+#                 },
+#                 status=status.HTTP_200_OK
+#             )
+#         return Response(
+#             {
+#                 "error": "serializer is not valid."
+#             },
+#             status=status.HTTP_400_BAD_REQUEST
+#         )
+
+# ...existing code...
 class VerifyEmailAPIView(APIView):
     def post(self, request):
         serializer = VerifyEmailSerializer(data=request.data)
-        if serializer.is_valid():
-            email = serializer.validated_data['email']
+        if not serializer.is_valid():
+            return Response({"error": "serializer is not valid."}, status=status.HTTP_400_BAD_REQUEST)
 
-            user_otp = serializer.validated_data['otp']
+        email = serializer.validated_data["email"]
+        user_otp = serializer.validated_data["otp"]
 
-            if MyUser.objects.filter(email=email).exists():
-                return Response({'message':'account with this email address already exists. please login'}, status=status.HTTP_403_FORBIDDEN)
+        # check existing user
+        if MyUser.objects.filter(email=email).exists():
+            return Response(
+                {"message": "account with this email address already exists. please login"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
-            cached_data = cache.get(email)
-            if cached_data is None:
-                return Response(
-                    {
-                        "error": "OTP expired or not found."
-                    },
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            if str(cached_data["otp_for_email"]) == str(user_otp):
-            # if cached_data == user_otp:
-                
-                # cache.set(f"{phone}_verified", True, timeout=6000)
-                MyUser.objects.create(
-                    email=email,
-                    password=cached_data["password"],
-                    is_verified=True
-                )
-                cache.delete(email)
-                return Response(
-                    {
-                        "message": "OTP verified. Proceed to profile setup.",
-                        "email": email
-                    },
-                    status=status.HTTP_200_OK
-                )
-            return Response({"error":"Invalid OTP"}, status=status.HTTP_400_BAD_REQUEST)
-        return Response({"error": "serializer is not valid."}, status=status.HTTP_400_BAD_REQUEST)
+        # check cache for otp
+        cached_data = cache.get(email)
+        if cached_data is None:
+            return Response({"error": "OTP expired or not found."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # verify otp
+        if str(cached_data["otp_for_email"]) != str(user_otp):
+            return Response({"error": "Invalid OTP"}, status=status.HTTP_400_BAD_REQUEST)
+
+
+        # create user using the raw password (Django will hash it)
+        raw_password = cached_data["password"]
+        user = MyUser.objects.create_user(
+            email=email,
+            password=raw_password,
+            # is_verified=True,
+        )
+
+        # cleanup cache
+        cache.delete(email)
+
+        # authenticate user with raw password
+        user = authenticate(request, email=email, password=raw_password)
+
+        
+        if not user:
+            return Response({"message": "something went wrong."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        # success
+        access_token = get_access_token(user)
+        return Response(
+            {
+                "message": "verification successful. Proceed to profile setup.",
+                "email": email,
+                "token": access_token,
+            },
+            status=status.HTTP_200_OK,
+        )
+# ...existing code...
 
 # not in use
 class VerifyPhoneAPIView(APIView):
@@ -218,10 +282,6 @@ class RegisterUserAPIView(APIView):
         print(serializer.errors)
         return Response({"message": "serializer error"}, status=status.HTTP_400_BAD_REQUEST)
 
-def get_access_token(user):
-    token = AccessToken.for_user(user)
-    return str(token)
-
 class LoginUserAPIView(APIView):
     def post(self, request):
         serializer = LoginUserSerializer(data=request.data)
@@ -229,43 +289,29 @@ class LoginUserAPIView(APIView):
         email = serializer.validated_data.get("email")
         password = serializer.validated_data.get("password")
 
+        # Authenticate directly (avoid MyUser.objects.get which raises DoesNotExist)
+        user = authenticate(request, email=email, password=password)
+        if user is None:
+            return Response(
+                {"message": "email or password wrong"},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        
+        if hasattr(user, 'profile'):
+            has_profile = True
+        else:
+            has_profile = False
 
-        user = authenticate(request, username=email, password=password)
-        if not user:
-            return Response(
-                {
-                    "message": "No User found."
-                },
-                status=status.HTTP_404_NOT_FOUND
-            )
-        if user and user.is_verified:
-            access_token = get_access_token(user)
-            return Response(
-                {
-                    "message": "verification successfull.",
-                    "email": email,
-                    "token": access_token
-                },
-                status=status.HTTP_200_OK
-            )
-        if user and not user.is_verified:
-            otp_code = random.randint(100000, 999999)
-            cache.set(email, otp_code, timeout=1800)
-            send_mail(
-                subject="Your Verification code for Login.",
-                message=f"your OTP Code is {otp_code}. It will expire in 3 minutes",
-                from_email=settings.EMAIL_HOST_USER,
-                recipient_list=[email],
-                fail_silently=False
-                
-            )
-            return Response(
-                {
-                    "message": "verification otp send to your email",
-                    "email": email
-                },
-                status=status.HTTP_200_OK
-            )
+        access_token = get_access_token(user)
+        return Response(
+            {
+                "message": "verification successful.",
+                "email": email,
+                "has_profile": has_profile,
+                "token": access_token
+            },
+            status=status.HTTP_200_OK
+        )
 
 def parse_formdata_to_json(formdata):
     data = {}
@@ -320,6 +366,13 @@ def parse_formdata_to_json(formdata):
 
     return data
 
+class HobbyListAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        hobbies = Hobby.objects.all()
+        serializer = HobbySerializer(hobbies, many=True, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 class SetupProfileAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -328,18 +381,26 @@ class SetupProfileAPIView(APIView):
     def post(self, request):
         print(request.data)
         json_data = parse_formdata_to_json(request.data)
-        print(f"after parsing:    {json_data}")
+        # print(f"after parsing:    {json_data}")
         serializer = ProfileSerializer(data=json_data, context={'request':request})
-        serializer.is_valid(raise_exception=True)
-        profile = serializer.save(user=request.user) 
-        response_serializer = ProfileSerializer(profile, context={'request': request})
+        if serializer.is_valid():
+            print(f"validated data: {serializer.validated_data}")
+            profile = serializer.save(user=request.user) 
+            response_serializer = ProfileSerializer(profile, context={'request': request})
+            return Response(
+                {
+                    "message": "profile setup completed. ",
+                    "data" : response_serializer.data
+                },
+                status=status.HTTP_200_OK
+            )  
+        print(f"serializer errors: {serializer.errors}") 
         return Response(
             {
-                "message": "profile setup completed. ",
-                "data" : response_serializer.data
+                "error": serializer.errors
             },
-            status=status.HTTP_200_OK
-        )   
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
 class VerifyUserAPIView(APIView):
     def post(self, request):
@@ -373,9 +434,17 @@ class DetailUserAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        profile = request.user.profile
+        try:
+            profile = request.user.profile
+        except Profile.DoesNotExist:
+            return Response(
+                {
+                    "error": "Profile not found."
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
         serializer = ProfileSerializer(profile, context={'request':request})
-
+        # print(f"serialized data: {serializer.data}")
         return Response(
             {
                 "data": serializer.data
@@ -393,7 +462,7 @@ class UpdateUserAPIView(APIView):
 
         serializer = ProfileSerializer(instance=profile, data=json_data, partial=True, context={'request':request})
         serializer.is_valid(raise_exception=True)
-        print(f"Data after validation : {serializer.validated_data}")
+        # print(f"Data after validation : {serializer.validated_data}")
         serializer.save(profile=profile)
         return Response(
             {
@@ -402,7 +471,49 @@ class UpdateUserAPIView(APIView):
             },
             status=status.HTTP_200_OK
         )
- 
+    
+class DeleteSocialAccountAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, social_id):
+        profile = request.user.profile
+        social_account = profile.social_links.filter(id=social_id).first()
+        if social_account is not None:
+            social_account.delete()
+            return Response(
+                {
+                    "message": "social account deleted successfully."
+                },
+                status=status.HTTP_200_OK
+            )
+        return Response(
+            {
+                "message": "social account not found."
+            },
+            status=status.HTTP_404_NOT_FOUND
+        )
+    
+class DeleteImageAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, image_id):
+        profile = request.user.profile
+        image = profile.images.filter(id=image_id).first()
+        if image is not None:
+            image.delete()
+            return Response(
+                {
+                    "message": "image deleted successfully."
+                },
+                status=status.HTTP_200_OK
+            )
+        return Response(
+            {
+                "message": "image not found."
+            },
+            status=status.HTTP_404_NOT_FOUND
+        )
+        
 class TimelineAPIView(generics.ListAPIView):
     serializer_class = TimelineSerializer
     permission_classes = [IsAuthenticated]
@@ -492,6 +603,70 @@ class OppUserDetailAPIView(APIView):
             status=status.HTTP_200_OK
         )
  
+class ChangePasswordAPIView(APIView):
+    def post(self, request):
+        serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"message": "Password changed successfully."}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class ForgotPasswordAPIView(APIView):
+    def post(self, request):
+        email = request.data.get('email')
+        if not MyUser.objects.filter(email=email).exists():
+            return Response({"message": "No account associated with this email."}, status=status.HTTP_404_NOT_FOUND)
+
+        otp_for_email = random.randint(100000, 999999)
+        cache.set(email, otp_for_email, timeout=300)
+
+        send_mail(
+            subject="Your Password Reset OTP",
+            message=f"Your OTP Code is {otp_for_email}. It will expire in 3 minutes.",
+            from_email=settings.EMAIL_HOST_USER,
+            recipient_list=[email],
+            fail_silently=False
+        )
+
+        return Response(
+            {
+                "message": "OTP sent successfully",
+                "email": email
+            },
+            status=status.HTTP_200_OK
+        )
+    
+class ForgotPasswordVerifyAPIView(APIView):
+    def post(self, request):
+        email = request.data.get('email')
+        user_otp = request.data.get('otp')
+
+        cached_otp = cache.get(email)
+        if cached_otp is None:
+            return Response({"error": "OTP expired or not found."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if str(cached_otp) != str(user_otp):
+            return Response({"error": "Invalid OTP"}, status=status.HTTP_400_BAD_REQUEST)
+
+        cache.delete(email)
+
+        return Response({"message": "Password reset successful.", "email": email}, status=status.HTTP_200_OK)
+    
+class FotgotPasswordConfirmAPIView(APIView):
+    def post(self, request):
+        email = request.data.get('email')
+        new_password = request.data.get('new_password')
+        confirm_password = request.data.get('confirm_password')
+
+        if new_password != confirm_password:
+            return Response({"error": "Passwords do not match."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        user = get_object_or_404(MyUser, email=email)
+        user.set_password(new_password)
+        user.save()
+
+        return Response({"message": "Password updated successfully."}, status=status.HTTP_200_OK)
+    
 
 # def parse_formdata_to_json(formdata):
 #     data = {}

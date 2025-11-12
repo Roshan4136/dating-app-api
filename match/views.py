@@ -9,8 +9,6 @@ from user.serializers import TimelineSerializer
 from user.models import MyUser
 from rest_framework.generics import ListAPIView
 
-
-
 class SwipeAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
