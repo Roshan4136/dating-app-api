@@ -137,7 +137,7 @@ class Profile(models.Model):
     dob = models.DateField(blank=True, null=True)
     # looking_for = models.CharField(max_length=10, choices=Gender.choices, blank=True, null=True)
     bio = models.TextField(blank=True, null=True)
-    location = models.CharField(max_length=50, blank=True, null=True)
+    location = models.CharField(max_length=200, blank=True, null=True)
     # location = gis_models.PointField(geography=True, blank=True, null=True)
     # intention = models.CharField(max_length=50, choices=Relationship.choices, blank=True, null=True)
     sexual_orientation = models.CharField(max_length=20, choices=SexualOrientation.choices, blank=True, null=True)

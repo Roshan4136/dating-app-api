@@ -4,10 +4,15 @@ from .models import(
     SocialLink, LifestyleChoice,
 )
 from django.contrib.auth.hashers import check_password
+from math import radians, sin, cos, sqrt, asin
+
 
 class EmailSerializer(serializers.Serializer):
     email = serializers.EmailField(max_length=100)
     password = serializers.CharField(max_length=100, required=True)
+
+class ResendOtpSerializer(serializers.Serializer):
+    email = serializers.EmailField(max_length=100)
 
 class VerifyEmailSerializer(serializers.Serializer):
     email = serializers.EmailField(max_length=100)
@@ -213,27 +218,59 @@ class VerifyUserSerializer(serializers.Serializer):
     email = serializers.EmailField()
     otp = serializers.CharField()
 
+def calculate_distance(lat1, lng1, lat2, lng2):
+    """
+    Calculate distance in kilometers between two points using Haversine formula.
+    """
+    if None in [lat1, lng1, lat2, lng2]:
+        return None
+    
+    # convert decimal degrees to radians
+    lon1, lat1, lon2, lat2 = map(radians, [lng1, lat1, lng2, lat2])
+
+    # differences
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+
+    # Haversine formula
+    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    c = 2 * asin(sqrt(a))
+    km = 6371 * c  # Earth radius in km
+    return round(km, 2)
+
 class TimelineSerializer(serializers.ModelSerializer):
     images_list = ImageSerializer(source='images', many=True, read_only=True)
     hobbies_list = HobbySerializer(many=True, source='hobbies', read_only=True)
-    age = serializers.ReadOnlyField()            # from the model property
-    distance = serializers.FloatField(read_only=True)
+    age = serializers.ReadOnlyField()                               # from the model property
     user_id = serializers.IntegerField(source='user.id', read_only=True)
+    distance = serializers.SerializerMethodField()
+
 
     class Meta:
         model = Profile
         fields = [
-            'user_id', 'id', 'first_name', 'profile_pic', 'dob', 
-            'bio', 'location', 'distance',
+            'user_id', 'id', 'full_name', 'profile_pic', 'dob', 
+            'bio', 'location', 'distance', 'gender', 'interested_in',
             'hobbies_list', 'images_list','age',
         ]
+    
+    def get_distance(self, obj):
+        request = self.context['request']
+        current_user_lat = request.user.profile.latitude
+        current_user_long = request.user.profile.longitude
+
+        if not current_user_lat or not current_user_long:
+            return None
+        return calculate_distance(obj.latitude, obj.longitude, current_user_lat, current_user_long)
+        
 
 class OppUserDetailSerializer(serializers.ModelSerializer):
-    hobbies_list = HobbySerializer(many=True, read_only=True)  # for read
-    lifestyle = LifestyleSerializer(read_only=True)
+    hobbies_list = HobbySerializer(source='hobbies', many=True, read_only=True)  # for read
+    lifestyle = LifestyleSerializer(source='profiles_with_lifestyle', read_only=True)
     # lifestyle_list = LifestyleSerializer(many=True, read_only=True)
-    images_list = ImageSerializer(many=True, read_only=True)
+    images_list = ImageSerializer(source='images', many=True, read_only=True)
     social_links = SocialLinkSerializer(many=True, read_only=True)
+    distance = serializers.SerializerMethodField()
 
     class Meta:
         model = Profile
@@ -241,15 +278,24 @@ class OppUserDetailSerializer(serializers.ModelSerializer):
             'id', 'full_name', 'gender', 'profile_pic', 'dob', 'interested_in',
             'relationship', 'sexual_orientation', 'show_orientation', 'bio', 'location', 
             'hobbies_list', 'images_list', 'latitude', 'longitude', 'social_links',
-            'zodiac_sign', 'show_zodiac', 'lifestyle', 
+            'zodiac_sign', 'show_zodiac', 'lifestyle', 'distance', 
         ]
         read_only_fields = [
-            'id', 'first_name', 'gender', 'last_name', 'profile_pic', 'dob', 'interested_in',
+            'id', 'full_name', 'gender', 'profile_pic', 'dob', 'interested_in',
             'relationship', 'sexual_orientation', 'show_orientation', 'bio', 'location', 
             'hobbies_list', 'images_list', 'latitude', 'longitude', 'social_links',
-            'zodiac_sign', 'show_zodiac', 'lifestyle', 
+            'zodiac_sign', 'show_zodiac', 'lifestyle', 'distance',
         ]
 
+    def get_distance(self, obj):
+        request = self.context['request']
+        current_user_lat = request.user.profile.latitude
+        current_user_long = request.user.profile.longitude
+
+        if not current_user_lat or not current_user_long:
+            return None
+        return calculate_distance(obj.latitude, obj.longitude, current_user_lat, current_user_long)
+        
 class ChangePasswordSerializer(serializers.Serializer):
     old_password = serializers.CharField(max_length=100)
     new_password = serializers.CharField(max_length=100)

@@ -7,7 +7,7 @@ from rest_framework import (
 from django.core.cache import cache
 import random
 from .serializers import (
-    EmailSerializer, VerifyEmailSerializer,
+    EmailSerializer, ResendOtpSerializer, VerifyEmailSerializer,
     PhoneSerializer, VerifyOtpSerializer,
     ProfileSerializer, MyUserSerializer,
     LoginUserSerializer, VerifyUserSerializer,
@@ -15,7 +15,7 @@ from .serializers import (
     ChangePasswordSerializer, HobbySerializer,
 )
 from .models import (
-    MyUser, Profile, LifestyleChoice, Hobby,
+    MyUser, Profile, LifestyleChoice, Hobby, InterestedIn, Gender,
 )
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import IsAuthenticated
@@ -64,8 +64,7 @@ class EmailAPIView(APIView):
                 message=f"your OTP Code is {otp_for_email}. It will expire in 3 minutes",
                 from_email=settings.EMAIL_HOST_USER,
                 recipient_list=[email],
-                fail_silently=False
-                
+                fail_silently=False   
             )
             
             return Response(
@@ -82,47 +81,47 @@ class EmailAPIView(APIView):
             status=status.HTTP_400_BAD_REQUEST
         )
     
-# class ResendOtpAPIView(APIView):
-#     def post(self, request):
-#         serializer = EmailSerializer(data=request.data)
-#         if serializer.is_valid():
-#             email = serializer.validated_data['email']
+class ResendOtpAPIView(APIView):
+    def post(self, request):
+        serializer = ResendOtpSerializer(data=request.data)
+        if serializer.is_valid():
+            email = serializer.validated_data['email']
 
-#             cached_data = cache.get(email)
-#             if cached_data is None:
-#                 return Response(
-#                     {
-#                         "error": "No pending verification found for this email."
-#                     },
-#                     status=status.HTTP_400_BAD_REQUEST
-#                 )
+            cached_data = cache.get(email)
+            if cached_data is None:
+                return Response(
+                    {
+                        "error": "No pending verification found for this email."
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
-#             otp_for_email = random.randint(100000, 999999)
-#             cached_data["otp_for_email"] = otp_for_email
-#             cache.set(email, cached_data, timeout=300)
+            otp_for_email = random.randint(100000, 999999)
+            cached_data["otp_for_email"] = otp_for_email
+            cache.set(email, cached_data, timeout=300)
 
-#             send_mail(
-#                 subject="Your Verification code for signup.",
-#                 message=f"your OTP Code is {otp_for_email}. It will expire in 3 minutes",
-#                 from_email=settings.EMAIL_HOST_USER,
-#                 recipient_list=[email],
-#                 fail_silently=False
+            send_mail(
+                subject="Your Verification code for signup.",
+                message=f"your OTP Code is {otp_for_email}. It will expire in 3 minutes",
+                from_email=settings.EMAIL_HOST_USER,
+                recipient_list=[email],
+                fail_silently=False
                 
-#             )
+            )
             
-#             return Response(
-#                 {
-#                     "message": "OTP resent successfully",
-#                     "email": email
-#                 },
-#                 status=status.HTTP_200_OK
-#             )
-#         return Response(
-#             {
-#                 "error": "serializer is not valid."
-#             },
-#             status=status.HTTP_400_BAD_REQUEST
-#         )
+            return Response(
+                {
+                    "message": "OTP resent successfully",
+                    "email": email
+                },
+                status=status.HTTP_200_OK
+            )
+        return Response(
+            {
+                "error": "serializer is not valid."
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
 # ...existing code...
 class VerifyEmailAPIView(APIView):
@@ -370,7 +369,7 @@ class HobbyListAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        hobbies = Hobby.objects.all()
+        hobbies = Hobby.objects.filter(predefined=True)
         serializer = HobbySerializer(hobbies, many=True, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -379,6 +378,16 @@ class SetupProfileAPIView(APIView):
     parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request):
+        
+        if hasattr(request.user, 'profile'):
+            print("Profile already exists for user.")
+            return Response(
+                {
+                    "message": "Profile already exists."
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
         print(request.data)
         json_data = parse_formdata_to_json(request.data)
         # print(f"after parsing:    {json_data}")
@@ -520,29 +529,42 @@ class TimelineAPIView(generics.ListAPIView):
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
 
     # Only real model fields can go here
-    filterset_fields = ['gender', 'intention', 'dob']
+    filterset_fields = ['gender', 'interested_in', 'dob']
 
     # Searchable fields
-    search_fields = ['first_name', 'bio']
+    search_fields = ['full_name', 'bio']
 
     # Fields allowed for ordering (annotated fields can be used if present in queryset)
     ordering_fields = ['dob', 'distance', 'age']
 
     def get_queryset(self):
         user_profile = self.request.user.profile
+        interested_on = self.request.query_params.get('gender')
 
         # blocked_users = Block.objects.filter(blocker=self.request.user).values_list('blocked', flat=True)
         blocked_users = Block.objects.filter(
             Q(blocker=self.request.user) | Q(blocked=self.request.user)
         ).values_list('blocked', 'blocker')
 
-        # flatten into list of ids
         blocked_ids = [uid for pair in blocked_users for uid in pair]
+        # if not blocked_ids:
+        #     blocked_ids = [-1]
+        qs1 = Profile.objects.exclude(user=self.request.user).exclude(user__in=blocked_ids).order_by('-id')
+        
+        # flatten into list of ids
+        # blocked_ids = []
 
-        qs = Profile.objects.exclude(user=self.request.user).exclude(user__in=blocked_ids)
+        if user_profile.interested_in == InterestedIn.ALL:
+            qs = qs1
+        elif user_profile.interested_in == InterestedIn.MAN:
+            qs = qs1.filter(gender=Gender.MALE)
+        elif user_profile.interested_in == InterestedIn.WOMAN:
+            qs = qs1.filter(gender=Gender.FEMALE)
 
-        # # Base queryset
-        # qs = Profile.objects.exclude(user=self.request.user).exclude(user__in=blocked_users)
+        if interested_on:
+            qs = qs1.filter(gender=interested_on)
+        # Base queryset
+        # qs = Profile.objects.exclude(user=self.request.user).exclude(user__in=blocked_ids)
 
         # Annotate age and distance only if user has location
         if user_profile.latitude is not None and user_profile.longitude is not None:

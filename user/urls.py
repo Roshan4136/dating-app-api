@@ -1,8 +1,8 @@
 from django.urls import path
 from .views import (
-    EmailAPIView, VerifyEmailAPIView,
+    EmailAPIView, VerifyEmailAPIView, ResendOtpAPIView,
     ForgotPasswordAPIView, ForgotPasswordVerifyAPIView, FotgotPasswordConfirmAPIView,
-    VerifyPhoneAPIView, VerifyOTPAPIView, RegisterUserAPIView,
+    # VerifyPhoneAPIView, VerifyOTPAPIView, RegisterUserAPIView,
     LoginUserAPIView, VerifyUserAPIView, DetailUserAPIView,
     UpdateUserAPIView, SetupProfileAPIView,TimelineAPIView,
     OppUserDetailAPIView, ChangePasswordAPIView, HobbyListAPIView,
@@ -11,11 +11,12 @@ from .views import (
 
 urlpatterns = [
     # phone number verification
-    path('send-otp/', VerifyPhoneAPIView.as_view(), name='send_otp'),
-    path('verify-otp/', VerifyOTPAPIView.as_view(), name='verify_otp'),
+    # path('send-otp/', VerifyPhoneAPIView.as_view(), name='send_otp'),
+    # path('verify-otp/', VerifyOTPAPIView.as_view(), name='verify_otp'),
 
-    # Email address verification
+    # user registration via email
     path('send_otp_in_email/', EmailAPIView.as_view(), name='send_otp_in_email'),
+    path('resend_otp/', ResendOtpAPIView.as_view(), name='resend_otp'),
     path('verify_otp_of_email/', VerifyEmailAPIView.as_view(), name='veriy_otp_of_email'),
     
     # ForgotPassword
@@ -24,7 +25,7 @@ urlpatterns = [
     path('forgot-password-confirm/', FotgotPasswordConfirmAPIView.as_view(), name='forgot_password_confirm'),
 
     # user registration
-    path('register/', RegisterUserAPIView.as_view(), name='registration'),
+    # path('register/', RegisterUserAPIView.as_view(), name='registration'),
     path('login/', LoginUserAPIView.as_view(), name='login'),
     path('verify-user-otp/', VerifyUserAPIView.as_view(), name='verify-otp'),
     

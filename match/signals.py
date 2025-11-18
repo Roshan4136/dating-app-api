@@ -5,6 +5,9 @@ from .models import Match
 
 @receiver(post_save, sender=Swipe)
 def create_match(sender, instance, created, **kwargs):
+    if not created:
+        return 
+    
     from_user = instance.from_user
     to_user = instance.to_user
 

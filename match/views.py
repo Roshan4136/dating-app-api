@@ -13,11 +13,17 @@ class SwipeAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        print(request.data)
         to_user_id = request.data.get('to_user')
         action_data = request.data.get('action')
 
         if action_data not in ['like', 'superlike', 'ignore', 'unlike']:
             return Response({"error": "Invalid action."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            to_user = MyUser.objects.get(id=to_user_id)
+        except MyUser.DoesNotExist:
+            return Response({"error": "Invalid to_user."}, status=status.HTTP_400_BAD_REQUEST)
 
         # handle unlike
         if action_data == 'unlike':
